@@ -1,0 +1,14 @@
+{
+  "title": "Flexx Plugin Sirv",
+  "descr": "",
+  "key": "flexx_plugin_sirv", // must be the name of the folder of your plugin, sample: app/views/plugins/<my_plugin> ==> 'my_plugin'
+  "helpers": [
+    "Plugins::FlexxPluginSirv::MainHelper"
+  ],
+  "hooks": {
+    "on_active": ["flexx_plugin_sirv_on_active"],
+    "on_inactive": ["flexx_plugin_sirv_on_inactive"],
+    "plugin_options": ["flexx_plugin_sirv_on_plugin_options"]
+    //here you can add all your hooks (read documentation)
+  }
+}
