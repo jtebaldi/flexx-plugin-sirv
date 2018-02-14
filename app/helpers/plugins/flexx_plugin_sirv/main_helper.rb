@@ -26,4 +26,8 @@ module Plugins::FlexxPluginSirv::MainHelper
   def flexx_plugin_sirv_on_plugin_options(args)
     args[:links] << link_to('Settings', admin_plugins_flexx_plugin_sirv_settings_path)
   end
+
+  def flexx_plugin_sirv_on_uploader(args)
+    args[:custom_uploader] = FlexxSirvUploader.new({current_site: args[:current_site], thumb: args[:thumb], aws_settings: args[:aws_settings]}, self)
+  end
 end
