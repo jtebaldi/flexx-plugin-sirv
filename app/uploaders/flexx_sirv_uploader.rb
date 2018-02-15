@@ -21,32 +21,50 @@ class FlexxSirvUploader < CamaleonCmsUploader
     objects
   end
 
-  def browser_files(prefix: '/')
-    folder = {}.tap {|folder| folder[prefix] = {files: {}, folders: {}}}
+  def browser_files(prefix = "", result = {})
+    result["/#{prefix[0..-2]}"] = {files: {}, folders: {}}
 
-    {}.tap do |result|
-      object_list = s3_client.list_objects(bucket: @aws_bucket, prefix: prefix)
-      object_list.contents.each do |file|
-        cache_item(
-          {
-            name: File.basename(file.key),
-            key: "/#{file.key}",
-            url: "https://tonanimm.sirv.com/#{file.key}",
-            is_folder: false,
-            size: file.size,
-            format: self.class.get_file_format(file.key),
-            type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
-            created_at: file.last_modified,
-            thumb: "https://tonanimm.sirv.com/#{file.key}?profile=Thumb"
-          }.with_indifferent_access,
-          folder
-        ) if file.size > 0
-      end
+    object_list = s3_client.list_objects(bucket: @aws_bucket, prefix: prefix)
+
+    object_list.contents.each do |file|
+      cache_item(
+        {
+          name: "#{File.basename(file.key)}",
+          key: "/#{file.key}",
+          url: "https://tonanimm.sirv.com/#{file.key}",
+          is_folder: false,
+          size: file.size,
+          format: self.class.get_file_format(file.key),
+          type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
+          created_at: file.last_modified,
+          thumb: "https://tonanimm.sirv.com/#{file.key}?profile=Thumb"
+        }.with_indifferent_access,
+        result
+      ) if file.size > 0
     end
 
-    @current_site.set_meta(cache_key, folder)
+    object_list.common_prefixes.each do |folder|
+      cache_item(
+        {
+          name: "#{folder.prefix[0..-2]}".gsub(prefix, ""),
+          key: "/#{folder.prefix[0..-2]}",
+          url: "",
+          is_folder: true,
+          size: 0,
+          format: "folder",
+          type: "",
+          created_at: "",
+          thumb: ""
+        }.with_indifferent_access,
+        result
+      )
 
-    folder
+      browser_files("#{folder.prefix}", result)
+    end
+
+    @current_site.set_meta(cache_key, result) if prefix == ""
+
+    result
   end
 
   def objects(prefix = '/', sort = 'created_at')
