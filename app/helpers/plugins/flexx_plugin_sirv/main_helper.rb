@@ -30,4 +30,8 @@ module Plugins::FlexxPluginSirv::MainHelper
   def flexx_plugin_sirv_on_uploader(args)
     args[:custom_uploader] = FlexxSirvUploader.new({current_site: args[:current_site], thumb: args[:thumb], aws_settings: args[:aws_settings]}, self)
   end
+
+  def flexx_plugin_sirv_before_upload(args)
+    args[:generate_thumb] = false # we dont generate thumbs manually on Sirv
+  end
 end

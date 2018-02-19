@@ -10,17 +10,6 @@ class FlexxSirvUploader < CamaleonCmsUploader
     @aws_settings[:aws_file_read_settings] ||= lambda{|data, s3_file| data }
   end
 
-  # recover all files from AWS and parse it to save into DB as cache
-  def browser_files_old
-    objects = {}
-    objects['/'] = {files: {}, folders: {}}
-    bucket.objects(@aws_settings["inner_folder"].present? ? {prefix: @aws_settings["inner_folder"]} : nil).each do |file|
-      cache_item(file_parse(file), objects)
-    end
-    @current_site.set_meta(cache_key, objects)
-    objects
-  end
-
   def browser_files(prefix = "", result = {})
     result["/#{prefix[0..-2]}"] = {files: {}, folders: {}}
 
@@ -29,11 +18,11 @@ class FlexxSirvUploader < CamaleonCmsUploader
     object_list.contents.each do |file|
       cache_item(
         {
-          name: "#{File.basename(file.key)}",
+          name: File.basename(file.key),
           key: "/#{file.key}",
           url: "https://tonanimm.sirv.com/#{file.key}",
           is_folder: false,
-          size: file.size,
+          size: file.size.round(2),
           format: self.class.get_file_format(file.key),
           type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
           created_at: file.last_modified,
@@ -78,44 +67,33 @@ class FlexxSirvUploader < CamaleonCmsUploader
   # parse an AWS file into custom file_object
   def file_parse(s3_file)
     key = s3_file.is_a?(String) ? s3_file : s3_file.key
-    key = "/#{key}" unless key.starts_with?('/')
     is_dir = s3_file.is_a?(String) || File.extname(key) == ''
-    res = {
-        "name" => File.basename(key),
-        "key" => key,
-        "url" => is_dir ? '' : (@cloudfront.present? ? File.join(@cloudfront, key) : s3_file.public_url),
-        "is_folder" => is_dir,
-        "size" => is_dir ? 0 : s3_file.size.round(2),
-        "format" => is_dir ? 'folder' : self.class.get_file_format(key),
-        "deleteUrl" => '',
-        "thumb" => '',
-        'type' => is_dir ? '' : (s3_file.content_type rescue (MIME::Types.type_for(key).first.content_type rescue "")),
-        'created_at' => is_dir ? '' : s3_file.last_modified,
-        'dimension' => ''
+
+    {
+        name: File.basename(key),
+        key: "/#{key}",
+        url: is_dir ? '' : "https://tonanimm.sirv.com/#{key}",
+        is_folder: is_dir,
+        size: is_dir ? 0 : s3_file.size.round(2),
+        format: is_dir ? 'folder' : self.class.get_file_format(key),
+        deleteUrl: '',
+        thumb: "https://tonanimm.sirv.com/#{key}?profile=Thumb",
+        type: is_dir ? '' : (MIME::Types.type_for(key).first.content_type rescue ""),
+        created_at: is_dir ? '' : s3_file.last_modified,
+        dimension: ''
     }.with_indifferent_access
-    res["thumb"] = version_path(res['url']) if res['format'] == 'image' && File.extname(res['name']).downcase != '.gif'
-    # if res['format'] == 'image' # TODO: Recover image dimension (suggestion: save dimesion as metadata)
-    @aws_settings[:aws_file_read_settings].call(res, s3_file)
   end
 
-  # add a file object or file path into AWS server
-  # :key => (String) key of the file ot save in AWS
-  # :args => (HASH) {same_name: false, is_thumb: false}, where:
-  #   - same_name: false => avoid to overwrite an existent file with same key and search for an available key
-  #   - is_thumb: true => if this file is a thumbnail of an uploaded file
   def add_file(uploaded_io_or_file_path, key, args = {})
-    args, res = {same_name: false, is_thumb: false}.merge(args), nil
-    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present? && !args[:is_thumb]
-    key = search_new_key(key) unless args[:same_name]
+    return if args[:is_thumb] # we dont generate thumbs manually on Sirv
 
-    if @instance # private hook to upload files by different way, add file data into result_data
-      _args={result_data: nil, file: uploaded_io_or_file_path, key: key, args: args, klass: self}; @instance.hooks_run('uploader_aws_before_upload', _args)
-      return _args[:result_data] if _args[:result_data].present?
-    end
+    args, res = {same_name: false, is_thumb: false}.merge(args), nil
+    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present?
+    key = search_new_key(key) unless args[:same_name]
 
     s3_file = bucket.object(key.split('/').clean_empty.join('/'))
     s3_file.upload_file(uploaded_io_or_file_path.is_a?(String) ? uploaded_io_or_file_path : uploaded_io_or_file_path.path, @aws_settings[:aws_file_upload_settings].call({acl: 'public-read'}))
-    res = cache_item(file_parse(s3_file)) unless args[:is_thumb]
+    res = cache_item(file_parse(s3_file))
     res
   end
 

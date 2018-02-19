@@ -9,6 +9,7 @@
     "on_active": ["flexx_plugin_sirv_on_active"],
     "on_inactive": ["flexx_plugin_sirv_on_inactive"],
     "plugin_options": ["flexx_plugin_sirv_on_plugin_options"],
-    "on_uploader": ["flexx_plugin_sirv_on_uploader"]
+    "on_uploader": ["flexx_plugin_sirv_on_uploader"],
+    "before_upload": ["flexx_plugin_sirv_before_upload"]
   }
 }
