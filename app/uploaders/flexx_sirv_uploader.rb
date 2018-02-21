@@ -106,11 +106,19 @@ class FlexxSirvUploader < CamaleonCmsUploader
     s3_file
   end
 
-  # delete a folder in AWS with :key
   def delete_folder(key)
-    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present?
-    bucket.objects(prefix: key.split('/').clean_empty.join('/') << '/').delete
-    reload
+    folder_name = key.split('/').clean_empty.join('/')
+
+    bucket.objects(bucket: @aws_bucket, prefix: folder_name).batch_delete!
+
+    begin
+      s3_client.list_objects(bucket: @aws_bucket, prefix: folder_name).common_prefixes.each do |folder|
+        delete_folder(folder.prefix)
+      end
+
+      bucket.object("#{folder_name}/").delete
+    rescue Aws::S3::Errors::NotFound
+    end
   end
 
   # delete a file in AWS with :key
@@ -125,13 +133,22 @@ class FlexxSirvUploader < CamaleonCmsUploader
   # initialize a bucket with AWS configurations
   # return: (AWS Bucket object)
   def bucket
-    @bucket ||= lambda{
-      s3 = Aws::S3::Resource.new(endpoint: 'https://s3.sirv.com', region: 'us-east-1', force_path_style: true, signature_version: 'v4', credentials: Aws::Credentials.new(@aws_akey, @aws_asecret))
-      bucket = s3.bucket(@aws_bucket)
-    }.call
+    @bucket ||=Aws::S3::Resource.new(
+      endpoint: 'https://s3.sirv.com',
+      region: 'us-east-1',
+      force_path_style: true,
+      signature_version: 's3',
+      credentials: Aws::Credentials.new(@aws_akey, @aws_asecret)
+      ).bucket(@aws_bucket)
   end
 
   def s3_client
-    @s3_client ||= Aws::S3::Client.new(endpoint: 'https://s3.sirv.com', region: 'us-east-1', force_path_style: true, signature_version: 'v4', credentials: Aws::Credentials.new(@aws_akey, @aws_asecret))
+    @s3_client ||= Aws::S3::Client.new(
+      endpoint: 'https://s3.sirv.com',
+      region: 'us-east-1',
+      force_path_style: true,
+      signature_version: 's3',
+      credentials: Aws::Credentials.new(@aws_akey, @aws_asecret)
+      )
   end
 end
