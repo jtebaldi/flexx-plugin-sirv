@@ -8,25 +8,26 @@ class FlexxSirvUploader < CamaleonCmsUploader
     @aws_bucket = @aws_settings[:bucket] || @current_site.get_option("filesystem_s3_bucket_name")
     @aws_settings[:aws_file_upload_settings] ||= lambda{|settings| settings }
     @aws_settings[:aws_file_read_settings] ||= lambda{|data, s3_file| data }
+    @flexx_sirv_folder = @current_site.get_option("flexx_sirv_folder")
   end
 
   def browser_files(prefix = "", result = {})
     result["/#{prefix[0..-2]}"] = {files: {}, folders: {}}
 
-    object_list = s3_client.list_objects(bucket: @aws_bucket, prefix: prefix)
+    object_list = s3_client.list_objects(bucket: @aws_bucket, prefix: "#{@flexx_sirv_folder}/#{prefix}")
 
     object_list.contents.each do |file|
       cache_item(
         {
           name: File.basename(file.key),
           key: "/#{file.key}",
-          url: "https://tonanimm.sirv.com/#{file.key}",
+          url: "https://tonanimm.sirv.com/#{@flexx_sirv_folder}/#{file.key}",
           is_folder: false,
           size: file.size.round(2),
           format: self.class.get_file_format(file.key),
           type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
           created_at: file.last_modified,
-          thumb: "https://tonanimm.sirv.com/#{file.key}?profile=Thumb"
+          thumb: "https://tonanimm.sirv.com/#{@flexx_sirv_folder}/#{file.key}?profile=Thumb"
         }.with_indifferent_access,
         result
       ) if file.size > 0
@@ -57,15 +58,14 @@ class FlexxSirvUploader < CamaleonCmsUploader
   end
 
   def objects(prefix = '/', sort = 'created_at')
-    if @aws_settings["inner_folder"].present?
-      prefix = "#{@aws_settings["inner_folder"]}/#{prefix}".gsub('//', '/')
+    if @flexx_sirv_folder.present?
+      prefix = "#{@flexx_sirv_folder}/#{prefix}".gsub('//', '/')
       prefix = prefix[0..-2] if prefix.end_with?('/')
     end
     super(prefix, sort)
   end
 
-  # parse an AWS file into custom file_object
-  def file_parse(s3_file)
+  def file_parse(s3_file, img)
     key = s3_file.is_a?(String) ? s3_file : s3_file.key
     is_dir = s3_file.is_a?(String) || File.extname(key) == ''
 
@@ -80,7 +80,7 @@ class FlexxSirvUploader < CamaleonCmsUploader
         thumb: "https://tonanimm.sirv.com/#{key}?profile=Thumb",
         type: is_dir ? '' : (MIME::Types.type_for(key).first.content_type rescue ""),
         created_at: is_dir ? '' : s3_file.last_modified,
-        dimension: ''
+        dimension: "#{img[:width]} x #{img[:height]}"
     }.with_indifferent_access
   end
 
@@ -88,18 +88,19 @@ class FlexxSirvUploader < CamaleonCmsUploader
     return if args[:is_thumb] # we dont generate thumbs manually on Sirv
 
     args, res = {same_name: false, is_thumb: false}.merge(args), nil
-    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present?
+    key = "#{@flexx_sirv_folder}/#{key}" if @flexx_sirv_folder.present?
     key = search_new_key(key) unless args[:same_name]
+
+    img = MiniMagick::Image.open(uploaded_io_or_file_path.is_a?(String) ? uploaded_io_or_file_path : uploaded_io_or_file_path.path)
 
     s3_file = bucket.object(key.split('/').clean_empty.join('/'))
     s3_file.upload_file(uploaded_io_or_file_path.is_a?(String) ? uploaded_io_or_file_path : uploaded_io_or_file_path.path, @aws_settings[:aws_file_upload_settings].call({acl: 'public-read'}))
-    res = cache_item(file_parse(s3_file))
+    res = cache_item(file_parse(s3_file, img))
     res
   end
 
-  # add new folder to AWS with :key
   def add_folder(key)
-    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present?
+    key = "#{@flexx_sirv_folder}/#{key}" if @flexx_sirv_folder.present?
     s3_file = bucket.object(key.split('/').clean_empty.join('/') << '/')
     s3_file.put(body: nil)
     cache_item(file_parse(s3_file))
@@ -121,17 +122,20 @@ class FlexxSirvUploader < CamaleonCmsUploader
     end
   end
 
-  # delete a file in AWS with :key
   def delete_file(key)
-    key = "#{@aws_settings["inner_folder"]}/#{key}" if @aws_settings["inner_folder"].present?
+    key = "#{@flexx_sirv_folder}/#{key}" if @flexx_sirv_folder.present?
     bucket.object(key.split('/').clean_empty.join('/')).delete rescue ''
     @instance.hooks_run('after_delete', key)
 
     reload
   end
 
-  # initialize a bucket with AWS configurations
-  # return: (AWS Bucket object)
+  def create_base_folder(key)
+    s3_file = bucket.object("#{key}/")
+    s3_file.put(body: nil)
+    s3_file
+  end
+
   def bucket
     @bucket ||=Aws::S3::Resource.new(
       endpoint: 'https://s3.sirv.com',

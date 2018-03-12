@@ -3,26 +3,31 @@ module Plugins::FlexxPluginSirv::MainHelper
     # klass.helper_method [:my_helper_method] rescue "" # here your methods accessible from views
   end
 
-  # here all actions on going to active
-  # you can run sql commands like this:
-  # results = ActiveRecord::Base.connection.execute(query);
-  # plugin: plugin model
   def flexx_plugin_sirv_on_active(plugin)
+    if plugin.site.get_option("flexx_sirv_folder").blank?
+      base_folder = "#{Digest::MD5.hexdigest(plugin.site.slug)}#{SecureRandom.hex(5)}"
+
+      plugin.site.set_option("flexx_sirv_folder", base_folder)
+
+      aws_settings = {
+        access_key: @current_site.get_option("filesystem_s3_access_key"),
+        secret_key: @current_site.get_option("filesystem_s3_secret_key"),
+        bucket: @current_site.get_option("filesystem_s3_bucket_name")
+      }
+
+      fls = FlexxSirvUploader.new({current_site: plugin.site, thumb: nil, aws_settings: aws_settings}, self)
+    end
+
+    plugin
   end
 
-  # here all actions on going to inactive
-  # plugin: plugin model
   def flexx_plugin_sirv_on_inactive(plugin)
+    plugin.site.set_option("flexx_sirv_folder", nil)
   end
 
-  # here all actions to upgrade for a new version
-  # plugin: plugin model
   def flexx_plugin_sirv_on_upgrade(plugin)
   end
 
-  # hook listener to add settings link below the title of current plugin (if it is installed)
-  # args: {plugin (Hash), links (Array)}
-  # permit to add unlimmited of links...
   def flexx_plugin_sirv_on_plugin_options(args)
     args[:links] << link_to('Settings', admin_plugins_flexx_plugin_sirv_settings_path)
   end
