@@ -1,33 +1,35 @@
 class FlexxSirvUploader < CamaleonCmsUploader
 
   def after_initialize
-    @cloudfront = @aws_settings[:cloud_front] || @current_site.get_option("filesystem_s3_cloudfront")
-    @aws_region = @aws_settings[:region] || @current_site.get_option("filesystem_region", 'us-west-2')
-    @aws_akey = @aws_settings[:access_key] || @current_site.get_option("filesystem_s3_access_key")
-    @aws_asecret = @aws_settings[:secret_key] || @current_site.get_option("filesystem_s3_secret_key")
-    @aws_bucket = @aws_settings[:bucket] || @current_site.get_option("filesystem_s3_bucket_name")
+    @sirv_region = ENV["SIRV_REGION"]
+    @sirv_endpoint = ENV["SIRV_ENDPOINT"]
+    @sirv_key = ENV["SIRV_KEY"]
+    @sirv_secret = ENV["SIRV_SECRET"]
+    @sirv_bucket = ENV["SIRV_BUCKET"]
+    @sirv_public_host = ENV["SIRV_PUBLIC_HOST"]
+    @flexx_sirv_folder = @current_site.get_option("flexx_sirv_folder")
+
     @aws_settings[:aws_file_upload_settings] ||= lambda{|settings| settings }
     @aws_settings[:aws_file_read_settings] ||= lambda{|data, s3_file| data }
-    @flexx_sirv_folder = @current_site.get_option("flexx_sirv_folder")
   end
 
   def browser_files(prefix = "", result = {})
     result["/#{prefix[0..-2]}"] = {files: {}, folders: {}}
 
-    object_list = s3_client.list_objects(bucket: @aws_bucket, prefix: "#{@flexx_sirv_folder}/#{prefix}")
+    object_list = s3_client.list_objects(bucket: @sirv_bucket, prefix: "#{@flexx_sirv_folder}/#{prefix}")
 
     object_list.contents.each do |file|
       cache_item(
         {
           name: File.basename(file.key),
           key: "/#{file.key}",
-          url: "https://tonanimm.sirv.com/#{@flexx_sirv_folder}/#{file.key}",
+          url: "#{@sirv_public_host}#{@flexx_sirv_folder}/#{file.key}",
           is_folder: false,
           size: file.size.round(2),
           format: self.class.get_file_format(file.key),
           type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
           created_at: file.last_modified,
-          thumb: "https://tonanimm.sirv.com/#{@flexx_sirv_folder}/#{file.key}?profile=Thumb"
+          thumb: "#{@sirv_public_host}#{@flexx_sirv_folder}/#{file.key}?profile=Thumb"
         }.with_indifferent_access,
         result
       ) if file.size > 0
@@ -72,12 +74,12 @@ class FlexxSirvUploader < CamaleonCmsUploader
     {
         name: File.basename(key),
         key: "/#{key}",
-        url: is_dir ? '' : "https://tonanimm.sirv.com/#{key}",
+        url: is_dir ? '' : "#{@sirv_public_host}#{key}",
         is_folder: is_dir,
         size: is_dir ? 0 : s3_file.size.round(2),
         format: is_dir ? 'folder' : self.class.get_file_format(key),
         deleteUrl: '',
-        thumb: "https://tonanimm.sirv.com/#{key}?profile=Thumb",
+        thumb: "#{@sirv_public_host}#{key}?profile=Thumb",
         type: is_dir ? '' : (MIME::Types.type_for(key).first.content_type rescue ""),
         created_at: is_dir ? '' : s3_file.last_modified,
         dimension: "#{img[:width]} x #{img[:height]}"
@@ -110,10 +112,7 @@ class FlexxSirvUploader < CamaleonCmsUploader
   def delete_folder(key)
     folder_name = key.split('/').clean_empty.join('/')
 
-    bucket.objects(bucket: @aws_bucket, prefix: folder_name).batch_delete!
-
-    begin
-      s3_client.list_objects(bucket: @aws_bucket, prefix: folder_name).common_prefixes.each do |folder|
+    bucket.objects(bucket: @sirv_bucket, prefix: folder_name).common_prefixes.each do |folder|
         delete_folder(folder.prefix)
       end
 
@@ -138,21 +137,21 @@ class FlexxSirvUploader < CamaleonCmsUploader
 
   def bucket
     @bucket ||=Aws::S3::Resource.new(
-      endpoint: 'https://s3.sirv.com',
-      region: 'us-east-1',
+      endpoint: @sirv_endpoint,
+      region: @sirv_region,
       force_path_style: true,
       signature_version: 's3',
-      credentials: Aws::Credentials.new(@aws_akey, @aws_asecret)
-      ).bucket(@aws_bucket)
+      credentials: Aws::Credentials.new(@sirv_key, @sirv_secret)
+      ).bucket(@sirv_bucket)
   end
 
   def s3_client
     @s3_client ||= Aws::S3::Client.new(
-      endpoint: 'https://s3.sirv.com',
-      region: 'us-east-1',
+      endpoint: @sirv_endpoint,
+      region: @sirv_region,
       force_path_style: true,
       signature_version: 's3',
-      credentials: Aws::Credentials.new(@aws_akey, @aws_asecret)
+      credentials: Aws::Credentials.new(@sirv_key, @sirv_secret)
       )
   end
 end
