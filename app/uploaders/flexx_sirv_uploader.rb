@@ -113,12 +113,11 @@ class FlexxSirvUploader < CamaleonCmsUploader
     folder_name = key.split('/').clean_empty.join('/')
 
     bucket.objects(bucket: @sirv_bucket, prefix: folder_name).common_prefixes.each do |folder|
-        delete_folder(folder.prefix)
-      end
-
-      bucket.object("#{folder_name}/").delete
-    rescue Aws::S3::Errors::NotFound
+      delete_folder(folder.prefix)
     end
+
+    bucket.object("#{folder_name}/").delete
+  rescue Aws::S3::Errors::NotFound
   end
 
   def delete_file(key)
@@ -136,7 +135,7 @@ class FlexxSirvUploader < CamaleonCmsUploader
   end
 
   def bucket
-    @bucket ||=Aws::S3::Resource.new(
+    @bucket ||= Aws::S3::Resource.new(
       endpoint: @sirv_endpoint,
       region: @sirv_region,
       force_path_style: true,
