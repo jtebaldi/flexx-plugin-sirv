@@ -16,13 +16,13 @@ module Plugins::FlexxPluginSirv::MainHelper
       }
 
       fls = FlexxSirvUploader.new({current_site: plugin.site, thumb: nil, aws_settings: aws_settings}, self)
+      fls.create_base_folder(base_folder)
     end
 
     plugin
   end
 
   def flexx_plugin_sirv_on_inactive(plugin)
-    plugin.site.set_option("flexx_sirv_folder", nil)
   end
 
   def flexx_plugin_sirv_on_upgrade(plugin)
