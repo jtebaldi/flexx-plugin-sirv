@@ -16,20 +16,20 @@ class FlexxSirvUploader < CamaleonCmsUploader
   def browser_files(prefix = "", result = {})
     result["/#{prefix[0..-2]}"] = {files: {}, folders: {}}
 
-    object_list = s3_client.list_objects(bucket: @sirv_bucket, prefix: "#{@flexx_sirv_folder}/#{prefix}")
+    object_list = s3_client.list_objects(bucket: @sirv_bucket, prefix: prefix)
 
     object_list.contents.each do |file|
       cache_item(
         {
           name: File.basename(file.key),
           key: "/#{file.key}",
-          url: "#{@sirv_public_host}#{@flexx_sirv_folder}/#{file.key}",
+          url: "#{@sirv_public_host}/#{file.key}",
           is_folder: false,
           size: file.size.round(2),
           format: self.class.get_file_format(file.key),
           type: (MIME::Types.type_for(file.key).first.content_type rescue ""),
           created_at: file.last_modified,
-          thumb: "#{@sirv_public_host}#{@flexx_sirv_folder}/#{file.key}?profile=Thumb"
+          thumb: "#{@sirv_public_host}/#{file.key}?profile=Thumb"
         }.with_indifferent_access,
         result
       ) if file.size > 0
@@ -67,7 +67,7 @@ class FlexxSirvUploader < CamaleonCmsUploader
     super(prefix, sort)
   end
 
-  def file_parse(s3_file, img)
+  def file_parse(s3_file, img = nil)
     key = s3_file.is_a?(String) ? s3_file : s3_file.key
     is_dir = s3_file.is_a?(String) || File.extname(key) == ''
 
@@ -82,7 +82,7 @@ class FlexxSirvUploader < CamaleonCmsUploader
         thumb: "#{@sirv_public_host}#{key}?profile=Thumb",
         type: is_dir ? '' : (MIME::Types.type_for(key).first.content_type rescue ""),
         created_at: is_dir ? '' : s3_file.last_modified,
-        dimension: "#{img[:width]} x #{img[:height]}"
+        dimension: ("#{img[:width]} x #{img[:height]}" unless img.blank?)
     }.with_indifferent_access
   end
 
@@ -109,11 +109,14 @@ class FlexxSirvUploader < CamaleonCmsUploader
     s3_file
   end
 
-  def delete_folder(key)
+  def delete_folder(key, add_prefix = true)
     folder_name = key.split('/').clean_empty.join('/')
+    folder_name = "#{@flexx_sirv_folder}/#{folder_name}" if add_prefix
 
-    bucket.objects(bucket: @sirv_bucket, prefix: folder_name).common_prefixes.each do |folder|
-      delete_folder(folder.prefix)
+    bucket.objects(bucket: @sirv_bucket, prefix: folder_name).batch_delete!
+
+    s3_client.list_objects(bucket: @sirv_bucket, prefix: folder_name).common_prefixes.each do |folder|
+       delete_folder(folder.prefix, false)
     end
 
     bucket.object("#{folder_name}/").delete
